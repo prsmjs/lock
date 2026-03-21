@@ -1,13 +1,18 @@
 {
   "name": "@prsm/lock",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Distributed locking primitives for Redis - mutex and semaphore",
   "type": "module",
   "exports": {
-    ".": "./src/index.js"
+    ".": {
+      "types": "./types/index.d.ts",
+      "default": "./src/index.js"
+    }
   },
+  "types": "./types/index.d.ts",
   "files": [
-    "src"
+    "src",
+    "types"
   ],
   "scripts": {
     "test": "vitest run"
