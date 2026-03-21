@@ -1,0 +1,134 @@
+import { createClient } from "redis"
+import ms from "@prsm/ms"
+import crypto from "node:crypto"
+
+const ACQUIRE_SCRIPT = `
+local key = KEYS[1]
+local max = tonumber(ARGV[1])
+local id = ARGV[2]
+local ttl = tonumber(ARGV[3])
+local time = redis.call('TIME')
+local now = tonumber(time[1]) * 1000 + math.floor(tonumber(time[2]) / 1000)
+redis.call('ZREMRANGEBYSCORE', key, '-inf', now - ttl)
+if redis.call('ZCARD', key) < max then
+  redis.call('ZADD', key, now, id)
+  return 1
+end
+return 0
+`
+
+const RELEASE_SCRIPT = `
+redis.call('ZREM', KEYS[1], ARGV[1])
+return 1
+`
+
+const RENEW_SCRIPT = `
+local time = redis.call('TIME')
+local now = tonumber(time[1]) * 1000 + math.floor(tonumber(time[2]) / 1000)
+local ttl = tonumber(ARGV[2])
+redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', now - ttl)
+if redis.call('ZSCORE', KEYS[1], ARGV[1]) then
+  redis.call('ZADD', KEYS[1], now, ARGV[1])
+  return 1
+end
+return 0
+`
+
+const COUNT_SCRIPT = `
+local key = KEYS[1]
+local ttl = tonumber(ARGV[1])
+local time = redis.call('TIME')
+local now = tonumber(time[1]) * 1000 + math.floor(tonumber(time[2]) / 1000)
+redis.call('ZREMRANGEBYSCORE', key, '-inf', now - ttl)
+return redis.call('ZCARD', key)
+`
+
+const PEEK_SCRIPT = `
+local key = KEYS[1]
+local ttl = tonumber(ARGV[1])
+local max = tonumber(ARGV[2])
+local time = redis.call('TIME')
+local now = tonumber(time[1]) * 1000 + math.floor(tonumber(time[2]) / 1000)
+redis.call('ZREMRANGEBYSCORE', key, '-inf', now - ttl)
+local members = redis.call('ZRANGE', key, 0, -1)
+local active = #members
+return {active, max, max - active, unpack(members)}
+`
+
+export function semaphore(options = {}) {
+  if (!options.max || options.max < 1) throw new Error("max must be a positive number")
+
+  const max = options.max
+  const ttlMs = ms(options.ttl ?? "60s")
+  const prefix = options.prefix ?? "lock:sem:"
+  const client = createClient(options.redis ?? {})
+  let connected = false
+
+  async function ensureConnected() {
+    if (!connected) {
+      await client.connect()
+      connected = true
+    }
+  }
+
+  async function acquire(key, opts = {}) {
+    await ensureConnected()
+    const id = opts.id ?? crypto.randomUUID()
+    const result = await client.eval(ACQUIRE_SCRIPT, {
+      keys: [`${prefix}${key}`],
+      arguments: [String(max), id, String(ttlMs)],
+    })
+    return { acquired: result === 1, id: result === 1 ? id : null }
+  }
+
+  async function release(key, id) {
+    await ensureConnected()
+    await client.eval(RELEASE_SCRIPT, {
+      keys: [`${prefix}${key}`],
+      arguments: [id],
+    })
+    return true
+  }
+
+  async function renew(key, id) {
+    await ensureConnected()
+    const result = await client.eval(RENEW_SCRIPT, {
+      keys: [`${prefix}${key}`],
+      arguments: [id, String(ttlMs)],
+    })
+    return result === 1
+  }
+
+  async function count(key) {
+    await ensureConnected()
+    const result = await client.eval(COUNT_SCRIPT, {
+      keys: [`${prefix}${key}`],
+      arguments: [String(ttlMs)],
+    })
+    return result
+  }
+
+  async function peek(key) {
+    await ensureConnected()
+    const result = await client.eval(PEEK_SCRIPT, {
+      keys: [`${prefix}${key}`],
+      arguments: [String(ttlMs), String(max)],
+    })
+    const active = result[0]
+    const maxVal = result[1]
+    const available = result[2]
+    const holders = result.slice(3)
+    return { active, max: maxVal, available, holders }
+  }
+
+  async function close() {
+    if (connected) {
+      await client.quit()
+      connected = false
+    }
+  }
+
+  client.on("error", () => {})
+
+  return { acquire, release, renew, count, peek, close }
+}
