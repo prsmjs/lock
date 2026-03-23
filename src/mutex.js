@@ -7,13 +7,13 @@ const RELEASE_SCRIPT = `if redis.call("get",KEYS[1]) == ARGV[1] then return redi
 export function mutex(options = {}) {
   const prefix = options.prefix ?? "lock:mutex:"
   const client = createClient(options.redis ?? {})
-  let connected = false
+  let connectPromise = null
 
   async function ensureConnected() {
-    if (!connected) {
-      await client.connect()
-      connected = true
+    if (!connectPromise) {
+      connectPromise = client.connect()
     }
+    await connectPromise
   }
 
   async function acquire(key, opts = {}) {
@@ -47,9 +47,10 @@ export function mutex(options = {}) {
   }
 
   async function close() {
-    if (connected) {
+    if (connectPromise) {
+      await connectPromise
       await client.quit()
-      connected = false
+      connectPromise = null
     }
   }
 

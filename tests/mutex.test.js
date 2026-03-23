@@ -133,6 +133,18 @@ describe("mutex", () => {
     await lockB.close()
   })
 
+  it("concurrent operations before first connect", async () => {
+    const fresh = mutex()
+    const results = await Promise.all([
+      fresh.acquire("concurrent-a"),
+      fresh.acquire("concurrent-b"),
+      fresh.acquire("concurrent-c"),
+    ])
+    expect(results.every(r => r.acquired)).toBe(true)
+    expect(new Set(results.map(r => r.id)).size).toBe(3)
+    await fresh.close()
+  })
+
   it("uses default TTL of 10s", async () => {
     const { acquired } = await lock.acquire("default-ttl")
     expect(acquired).toBe(true)
