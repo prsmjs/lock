@@ -154,6 +154,21 @@ describe("semaphore", () => {
     await sem2.close()
   })
 
+  it("concurrent operations before first connect", async () => {
+    const fresh = semaphore({ max: 5, ttl: "60s" })
+    const results = await Promise.all([
+      fresh.acquire("concurrent"),
+      fresh.acquire("concurrent"),
+      fresh.acquire("concurrent"),
+    ])
+    expect(results.every(r => r.acquired)).toBe(true)
+    expect(new Set(results.map(r => r.id)).size).toBe(3)
+
+    const c = await fresh.count("concurrent")
+    expect(c).toBe(3)
+    await fresh.close()
+  })
+
   it("heartbeat keeps lease alive across TTL windows", async () => {
     const shortSem = semaphore({ max: 1, ttl: 100 })
 

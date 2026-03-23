@@ -62,13 +62,13 @@ export function semaphore(options = {}) {
   const ttlMs = ms(options.ttl ?? "60s")
   const prefix = options.prefix ?? "lock:sem:"
   const client = createClient(options.redis ?? {})
-  let connected = false
+  let connectPromise = null
 
   async function ensureConnected() {
-    if (!connected) {
-      await client.connect()
-      connected = true
+    if (!connectPromise) {
+      connectPromise = client.connect()
     }
+    await connectPromise
   }
 
   async function acquire(key, opts = {}) {
@@ -122,9 +122,10 @@ export function semaphore(options = {}) {
   }
 
   async function close() {
-    if (connected) {
+    if (connectPromise) {
+      await connectPromise
       await client.quit()
-      connected = false
+      connectPromise = null
     }
   }
 
