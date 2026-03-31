@@ -4,7 +4,7 @@
 
 <h1 align="center">@prsm/lock</h1>
 
-Distributed locking primitives for Redis. Mutex (exclusive lock) and semaphore (N concurrent leases). Atomic, safe, crash-tolerant.
+Distributed locking primitives for Redis. Mutex for exclusive locks, semaphore for N concurrent leases. All operations are atomic via Lua scripts, and locks auto-expire on crash via TTL.
 
 ## Installation
 
