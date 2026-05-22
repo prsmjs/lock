@@ -121,6 +121,34 @@ export function semaphore(options = {}) {
     return { active, max: maxVal, available, holders }
   }
 
+  async function list() {
+    await ensureConnected()
+    const results = []
+    let cursor = "0"
+    do {
+      const reply = await client.scan(cursor, { MATCH: `${prefix}*`, COUNT: 200 })
+      cursor = String(reply.cursor)
+      for (const fullKey of reply.keys) {
+        const key = fullKey.slice(prefix.length)
+        const result = await client.eval(PEEK_SCRIPT, {
+          keys: [fullKey],
+          arguments: [String(ttlMs), String(max)],
+        })
+        const active = result[0]
+        if (active > 0) {
+          results.push({
+            key,
+            active,
+            max: result[1],
+            available: result[2],
+            holders: result.slice(3),
+          })
+        }
+      }
+    } while (cursor !== "0")
+    return results
+  }
+
   async function close() {
     if (connectPromise) {
       await connectPromise
@@ -131,5 +159,5 @@ export function semaphore(options = {}) {
 
   client.on("error", () => {})
 
-  return { acquire, release, renew, count, peek, close }
+  return { acquire, release, renew, count, peek, list, close }
 }

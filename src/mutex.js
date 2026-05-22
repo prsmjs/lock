@@ -46,6 +46,25 @@ export function mutex(options = {}) {
     return { held: true, holder, ttl }
   }
 
+  async function list() {
+    await ensureConnected()
+    const results = []
+    let cursor = "0"
+    do {
+      const reply = await client.scan(cursor, { MATCH: `${prefix}*`, COUNT: 200 })
+      cursor = String(reply.cursor)
+      for (const fullKey of reply.keys) {
+        const key = fullKey.slice(prefix.length)
+        const [holder, ttl] = await Promise.all([
+          client.get(fullKey),
+          client.pTTL(fullKey),
+        ])
+        if (holder !== null) results.push({ key, holder, ttl })
+      }
+    } while (cursor !== "0")
+    return results
+  }
+
   async function close() {
     if (connectPromise) {
       await connectPromise
@@ -56,5 +75,5 @@ export function mutex(options = {}) {
 
   client.on("error", () => {})
 
-  return { acquire, release, peek, close }
+  return { acquire, release, peek, list, close }
 }

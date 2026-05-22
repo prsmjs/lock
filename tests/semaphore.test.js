@@ -188,4 +188,31 @@ describe("semaphore", () => {
     await shortSem.close()
     await shortSem2.close()
   })
+
+  it("list returns all semaphores with active leases", async () => {
+    await sem.acquire("slots-a")
+    await sem.acquire("slots-a")
+    await sem.acquire("slots-b")
+
+    const all = await sem.list()
+    expect(all).toHaveLength(2)
+    expect(all.map((s) => s.key).sort()).toEqual(["slots-a", "slots-b"])
+
+    const a = all.find((s) => s.key === "slots-a")
+    expect(a.active).toBe(2)
+    expect(a.max).toBe(3)
+    expect(a.available).toBe(1)
+    expect(a.holders).toHaveLength(2)
+  })
+
+  it("list returns empty when nothing is held", async () => {
+    expect(await sem.list()).toEqual([])
+  })
+
+  it("list omits semaphores once their leases are released", async () => {
+    const { id } = await sem.acquire("solo")
+    expect(await sem.list()).toHaveLength(1)
+    await sem.release("solo", id)
+    expect(await sem.list()).toEqual([])
+  })
 })

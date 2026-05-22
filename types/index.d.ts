@@ -26,10 +26,17 @@ export interface PeekResult {
   ttl: number
 }
 
+export interface MutexLockInfo {
+  key: string
+  holder: string
+  ttl: number
+}
+
 export interface Mutex {
   acquire(key: string, options?: AcquireOptions): Promise<AcquireResult>
   release(key: string, id: string): Promise<boolean>
   peek(key: string): Promise<PeekResult>
+  list(): Promise<MutexLockInfo[]>
   close(): Promise<void>
 }
 
@@ -53,12 +60,21 @@ export interface SemaphorePeekResult {
   holders: string[]
 }
 
+export interface SemaphoreLockInfo {
+  key: string
+  active: number
+  max: number
+  available: number
+  holders: string[]
+}
+
 export interface Semaphore {
   acquire(key: string, options?: SemaphoreAcquireOptions): Promise<AcquireResult>
   release(key: string, id: string): Promise<true>
   renew(key: string, id: string): Promise<boolean>
   count(key: string): Promise<number>
   peek(key: string): Promise<SemaphorePeekResult>
+  list(): Promise<SemaphoreLockInfo[]>
   close(): Promise<void>
 }
 

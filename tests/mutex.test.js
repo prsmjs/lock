@@ -153,4 +153,43 @@ describe("mutex", () => {
     expect(info.ttl).toBeGreaterThan(9000)
     expect(info.ttl).toBeLessThanOrEqual(10000)
   })
+
+  it("list returns all held locks", async () => {
+    await lock.acquire("alpha", { ttl: "30s" })
+    await lock.acquire("beta", { id: "holder-b", ttl: "30s" })
+
+    const held = await lock.list()
+    expect(held).toHaveLength(2)
+    expect(held.map((l) => l.key).sort()).toEqual(["alpha", "beta"])
+
+    const beta = held.find((l) => l.key === "beta")
+    expect(beta.holder).toBe("holder-b")
+    expect(beta.ttl).toBeGreaterThan(0)
+    expect(beta.ttl).toBeLessThanOrEqual(30000)
+  })
+
+  it("list returns empty when nothing is held", async () => {
+    expect(await lock.list()).toEqual([])
+  })
+
+  it("list reflects releases", async () => {
+    const { id } = await lock.acquire("gamma", { ttl: "30s" })
+    expect(await lock.list()).toHaveLength(1)
+    await lock.release("gamma", id)
+    expect(await lock.list()).toEqual([])
+  })
+
+  it("list only sees its own prefix", async () => {
+    const lockA = mutex({ prefix: "listpfx:a:" })
+    const lockB = mutex({ prefix: "listpfx:b:" })
+    await lockA.acquire("one")
+    await lockB.acquire("two")
+
+    const a = await lockA.list()
+    expect(a).toHaveLength(1)
+    expect(a[0].key).toBe("one")
+
+    await lockA.close()
+    await lockB.close()
+  })
 })
