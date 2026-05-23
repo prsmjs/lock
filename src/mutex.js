@@ -6,6 +6,7 @@ const RELEASE_SCRIPT = `if redis.call("get",KEYS[1]) == ARGV[1] then return redi
 
 export function mutex(options = {}) {
   const prefix = options.prefix ?? "lock:mutex:"
+  const tracer = options.tracer ?? null
   const client = createClient(options.redis ?? {})
   let connectPromise = null
 
@@ -16,7 +17,7 @@ export function mutex(options = {}) {
     await connectPromise
   }
 
-  async function acquire(key, opts = {}) {
+  async function _acquire(key, opts = {}) {
     await ensureConnected()
     const ttl = ms(opts.ttl ?? "10s")
     const id = opts.id ?? crypto.randomUUID()
@@ -24,13 +25,27 @@ export function mutex(options = {}) {
     return { acquired: result === "OK", id: result === "OK" ? id : null }
   }
 
-  async function release(key, id) {
+  async function _release(key, id) {
     await ensureConnected()
     const result = await client.eval(RELEASE_SCRIPT, {
       keys: [`${prefix}${key}`],
       arguments: [id],
     })
     return result === 1
+  }
+
+  async function acquire(key, opts = {}) {
+    if (!tracer) return _acquire(key, opts)
+    return tracer.span('lock.mutex.acquire', { 'lock.key': key }, async (span) => {
+      const r = await _acquire(key, opts)
+      span.setAttribute('lock.acquired', r.acquired)
+      return r
+    })
+  }
+
+  async function release(key, id) {
+    if (!tracer) return _release(key, id)
+    return tracer.span('lock.mutex.release', { 'lock.key': key }, () => _release(key, id))
   }
 
   async function peek(key) {

@@ -61,6 +61,7 @@ export function semaphore(options = {}) {
   const max = options.max
   const ttlMs = ms(options.ttl ?? "60s")
   const prefix = options.prefix ?? "lock:sem:"
+  const tracer = options.tracer ?? null
   const client = createClient(options.redis ?? {})
   let connectPromise = null
 
@@ -71,7 +72,7 @@ export function semaphore(options = {}) {
     await connectPromise
   }
 
-  async function acquire(key, opts = {}) {
+  async function _acquire(key, opts = {}) {
     await ensureConnected()
     const id = opts.id ?? crypto.randomUUID()
     const result = await client.eval(ACQUIRE_SCRIPT, {
@@ -81,7 +82,7 @@ export function semaphore(options = {}) {
     return { acquired: result === 1, id: result === 1 ? id : null }
   }
 
-  async function release(key, id) {
+  async function _release(key, id) {
     await ensureConnected()
     await client.eval(RELEASE_SCRIPT, {
       keys: [`${prefix}${key}`],
@@ -90,13 +91,32 @@ export function semaphore(options = {}) {
     return true
   }
 
-  async function renew(key, id) {
+  async function _renew(key, id) {
     await ensureConnected()
     const result = await client.eval(RENEW_SCRIPT, {
       keys: [`${prefix}${key}`],
       arguments: [id, String(ttlMs)],
     })
     return result === 1
+  }
+
+  async function acquire(key, opts = {}) {
+    if (!tracer) return _acquire(key, opts)
+    return tracer.span('lock.semaphore.acquire', { 'lock.key': key, 'lock.max': max }, async (span) => {
+      const r = await _acquire(key, opts)
+      span.setAttribute('lock.acquired', r.acquired)
+      return r
+    })
+  }
+
+  async function release(key, id) {
+    if (!tracer) return _release(key, id)
+    return tracer.span('lock.semaphore.release', { 'lock.key': key }, () => _release(key, id))
+  }
+
+  async function renew(key, id) {
+    if (!tracer) return _renew(key, id)
+    return tracer.span('lock.semaphore.renew', { 'lock.key': key }, () => _renew(key, id))
   }
 
   async function count(key) {
