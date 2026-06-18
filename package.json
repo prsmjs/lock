@@ -15,7 +15,8 @@
     "types"
   ],
   "scripts": {
-    "test": "vitest run"
+    "test": "vitest run",
+    "prepublishOnly": "npx tsc --declaration --allowJs --emitDeclarationOnly --skipLibCheck --target es2020 --module nodenext --moduleResolution nodenext --strict false --esModuleInterop true --outDir ./types src/index.js src/mutex.js src/semaphore.js"
   },
   "keywords": [
     "lock",
@@ -34,6 +35,7 @@
   },
   "devDependencies": {
     "@prsm/trace": "^1.2.0",
+    "typescript": "^5.9.3",
     "vitest": "^3.0.0"
   },
   "license": "MIT"
